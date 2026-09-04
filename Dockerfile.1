@@ -1,6 +1,11 @@
 # ═══════════════════════════════════════════════════════════════════
 # MetaTrader 5 - Dockerfile VPS (com VNC pra acesso remoto)
-# Usa user padrão do sistema (não fixa em veris)
+#
+# Diferenças do Dockerfile normal:
+#   - Inclui Xvfb (display virtual) + x11vnc + websockify
+#   - Expõe porta 5900 (VNC) e 6080 (noVNC web)
+#   - Auto-inicia VNC server
+#   - Headless (sem Wayland nativo, usa Xvfb)
 # ═══════════════════════════════════════════════════════════════════
 
 FROM ubuntu:24.04
@@ -8,40 +13,26 @@ FROM ubuntu:24.04
 LABEL maintainer="MT5 Docker"
 LABEL description="MT5 via GE-Proton 10-23 + VNC (VPS-ready)"
 
-# ═══════════════════════════════════════════════════════════════════
-# ARG - pode ser sobrescrito no build (--build-arg)
-# ═══════════════════════════════════════════════════════════════════
-
-ARG APP_USER=appuser
-ARG APP_UID=1000
-ARG APP_GID=1000
-
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
+ENV USER_NAME=veris
 ENV PROTON_VERSION=GE-Proton10-23
 ENV PROTON_DIR=/proton
-ENV STEAM_COMPAT_CLIENT_INSTALL_PATH=/proton
-ENV STEAM_COMPAT_DATA_PATH=/home/${APP_USER}/proton_prefix
+ENV STEAM_COMPAT_DATA_PATH=/home/${USER_NAME}/proton_prefix
 
-# VNC
+# VNC settings
 ENV DISPLAY=:0
 ENV VNC_PORT=5900
 ENV NOVNC_PORT=6080
-ENV VNC_RESOLUTION=1920x1080x24
+ENV VNC_PASSWORD=mt5vps
 
 # Proton settings
 ENV PROTON_LOG=1
-ENV PROTON_LOG_DIR=/home/${APP_USER}/proton_logs
+ENV PROTON_LOG_DIR=/home/${USER_NAME}/proton_logs
 ENV PROTON_USE_WINED3D=1
 ENV PROTON_USE_DXVK=0
-ENV PROTON_NO_D3D11=0
-ENV WINE_D3D_CONFIG=renderer=gl
-ENV WINEDLLOVERRIDES=d3d11=b,dxgi=b,d3d10core=b,d3d9=b
-
-ENV APP_USER=${APP_USER}
-ENV APP_HOME=/home/${APP_USER}
 
 # ═══════════════════════════════════════════════════════════════════
 # PACOTES
@@ -54,10 +45,9 @@ RUN dpkg --add-architecture i386 && \
         wget curl ca-certificates gnupg2 \
         apt-transport-https software-properties-common \
         tar xz-utils unzip p7zip-full cabextract \
-        sudo \
         # VNC stack
         xvfb x11vnc \
-        netcat-openbsd \
+        novac python3-websockify \
         # Wine
         libasound2t64 libpulse0 libpulse0:i386 \
         libjack-jackd2-0 libjack-jackd2-0:i386 \
@@ -72,7 +62,7 @@ RUN dpkg --add-architecture i386 && \
         mesa-vulkan-drivers mesa-vulkan-drivers:i386 \
         mesa-utils vainfo vulkan-tools \
         # Fontes
-        fontconfig fonts-liberation \
+        fontconfig ttf-mscorefonts-installer fonts-liberation \
         # Bibliotecas Wine
         libfreetype6 libfreetype6:i386 \
         libfontconfig1 libfontconfig1:i386 \
@@ -85,25 +75,19 @@ RUN dpkg --add-architecture i386 && \
         libudev1 libudev1:i386 \
         libsdl2-2.0-0 libsdl2-2.0-0:i386 \
         libdbus-1-3 libdbus-1-3:i386 \
-        # X11
+        # X11 (necessário pro Xvfb)
         libx11-6 libx11-6:i386 libxext6 libxext6:i386 \
         libxrandr2 libxrandr2:i386 libxcursor1 libxcursor1:i386 \
         libxi6 libxi6:i386 libxkbcommon0 libxkbcommon-x11-0 \
         # Userland
         bash coreutils procps nano \
-        # noVNC precisa de websockify (Python)
-        python3 python3-pip python3-websockify \
-        # noVNC web client
-        novnc \
     && \
-    # Aceita EULA das fontes Microsoft
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | \
         debconf-set-selections && \
     apt-get install -y --no-install-recommends ttf-mscorefonts-installer && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    fc-cache -f && \
-    echo "✓ Pacotes instalados"
+    fc-cache -f
 
 # ═══════════════════════════════════════════════════════════════════
 # Winetricks
@@ -112,8 +96,7 @@ RUN dpkg --add-architecture i386 && \
 RUN curl -fsSL \
     https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
     -o /usr/local/bin/winetricks && \
-    chmod +x /usr/local/bin/winetricks && \
-    echo "✓ Winetricks instalado"
+    chmod +x /usr/local/bin/winetricks
 
 # ═══════════════════════════════════════════════════════════════════
 # GE-PROTON 10-23
@@ -125,7 +108,7 @@ RUN mkdir -p /proton && \
     -o /tmp/ge-proton.tar.gz && \
     SIZE=$(stat -c %s /tmp/ge-proton.tar.gz 2>/dev/null) && \
     if [ "${SIZE}" -lt 100000000 ]; then \
-        echo "❌ Download do GE-Proton muito pequeno (${SIZE} bytes)"; exit 1; \
+        echo "❌ Download do GE-Proton muito pequeno"; exit 1; \
     fi && \
     HEAD_BYTES=$(head -c 2 /tmp/ge-proton.tar.gz | od -An -tx1 | tr -d ' \n') && \
     if [ "${HEAD_BYTES}" != "1f8b" ]; then \
@@ -133,7 +116,7 @@ RUN mkdir -p /proton && \
     fi && \
     tar -xzf /tmp/ge-proton.tar.gz -C /proton --strip-components=1 --warning=no-all && \
     rm -f /tmp/ge-proton.tar.gz && \
-    [ -x /proton/proton ] || (echo "❌ /proton/proton não encontrado"; exit 1) && \
+    [ -x /proton/proton ] && \
     chmod +x /proton/proton && \
     echo "✓ GE-Proton ${PROTON_VERSION} instalado"
 
@@ -141,73 +124,57 @@ RUN mkdir -p /proton && \
 # Usuário e diretórios
 # ═══════════════════════════════════════════════════════════════════
 
-RUN set -eux; \
-    # Cria grupo se não existir
-    if ! getent group ${APP_GID} > /dev/null; then \
-        groupadd -g ${APP_GID} ${APP_USER}; \
-    fi; \
-    # Cria usuário se não existir
-    if ! id -u ${APP_USER} > /dev/null 2>&1; then \
-        useradd -m \
-            -u ${APP_UID} \
-            -g ${APP_GID} \
-            -s /bin/bash \
-            ${APP_USER}; \
-    fi; \
-    # Adiciona aos grupos necessários
-    usermod -aG audio,video,dialout,sudo ${APP_USER} 2>/dev/null || true; \
-    # Permite sudo sem senha (pra usar dentro do container)
-    echo "${APP_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${APP_USER}; \
-    # Cria diretórios
+RUN groupadd -g 1000 ${USER_NAME} && \
+    useradd -m -u 1000 -g ${USER_NAME} -s /bin/bash ${USER_NAME} && \
+    usermod -aG audio,video,dialout ${USER_NAME} 2>/dev/null || true && \
     mkdir -p \
-        ${APP_HOME}/proton_prefix \
-        ${APP_HOME}/mt5_installer \
-        ${APP_HOME}/proton_logs \
-        ${APP_HOME}/config \
-        ${APP_HOME}/logs \
-        ${APP_HOME}/.vnc; \
-    chown -R ${APP_USER}:${APP_USER} ${APP_HOME}; \
-    echo "✓ User ${APP_USER} (UID ${APP_UID}) criado"
+        /home/${USER_NAME}/proton_prefix \
+        /home/${USER_NAME}/mt5_installer \
+        /home/${USER_NAME}/proton_logs \
+        /home/${USER_NAME}/config \
+        /home/${USER_NAME}/logs \
+        /home/${USER_NAME}/.vnc && \
+    chown -R ${USER_NAME}:${USER_NAME} /home/${USER_NAME}
 
 # ═══════════════════════════════════════════════════════════════════
-# Scripts - copia TUDO de uma vez
+# Scripts
 # ═══════════════════════════════════════════════════════════════════
 
-# Copia o diretório scripts inteiro (mais simples que COPY individual)
-COPY --chown=${APP_USER}:${APP_USER} scripts/ ${APP_HOME}/scripts/
-COPY --chown=${APP_USER}:${APP_USER} start.sh /start.sh
-COPY --chown=${APP_USER}:${APP_USER} start_mt5.sh /start_mt5.sh
+COPY --chown=${USER_NAME}:${USER_NAME} start.sh /start.sh
+COPY --chown=${USER_NAME}:${USER_NAME} start_mt5.sh /start_mt5.sh
+COPY --chown=${USER_NAME}:${USER_NAME} install_fonts.sh /home/${USER_NAME}/install_fonts.sh
+COPY --chown=${USER_NAME}:${USER_NAME} install_webview2.sh /home/${USER_NAME}/install_webview2.sh
+COPY --chown=${USER_NAME}:${USER_NAME} enable_webview_simple.sh /home/${USER_NAME}/enable_webview_simple.sh
+COPY --chown=${USER_NAME}:${USER_NAME} force_wined3d_webview.sh /home/${USER_NAME}/force_wined3d_webview.sh
+COPY --chown=${USER_NAME}:${USER_NAME} fix_dpi_resolution.sh /home/${USER_NAME}/fix_dpi_resolution.sh
+COPY --chown=${USER_NAME}:${USER_NAME} force_wayland.sh /home/${USER_NAME}/force_wayland.sh
+COPY --chown=${USER_NAME}:${USER_NAME} reset_all.sh /home/${USER_NAME}/reset_all.sh
+COPY --chown=${USER_NAME}:${USER_NAME} redock_windows.sh /home/${USER_NAME}/redock_windows.sh
+COPY --chown=${USER_NAME}:${USER_NAME} fix_swapchain.sh /home/${USER_NAME}/fix_swapchain.sh
+COPY --chown=${USER_NAME}:${USER_NAME} check_webview2.sh /home/${USER_NAME}/check_webview2.sh
+COPY --chown=${USER_NAME}:${USER_NAME} install_dlls_proton.sh /home/${USER_NAME}/install_dlls_proton.sh
 
-# Torna todos os scripts executáveis
-RUN chmod +x /start.sh /start_mt5.sh ${APP_HOME}/scripts/*.sh && \
-    # Cria links simbólicos no home pra acesso fácil
-    for f in ${APP_HOME}/scripts/*.sh; do \
-        ln -sf "$f" "${APP_HOME}/$(basename $f)"; \
-    done && \
-    echo "✓ Scripts copiados e linkados em ${APP_HOME}/"
+RUN chmod +x /start.sh /home/${USER_NAME}/*.sh
 
-# ═══════════════════════════════════════════════════════════════════
-# noVNC web files
-# ═══════════════════════════════════════════════════════════════════
-
-# Cria link pro noVNC se não tiver
-RUN if [ ! -d /usr/share/novnc ]; then \
-        echo "⚠  noVNC não encontrado em /usr/share/novnc"; \
-        mkdir -p /usr/share/novnc; \
-    fi; \
-    echo "✓ noVNC disponível"
+# Cria link retrocompatível (caso algum script referencie o path antigo)
+RUN ln -sf /home/${USER_NAME} /home/mt5user
 
 # ═══════════════════════════════════════════════════════════════════
-# Final
+# VNC password
 # ═══════════════════════════════════════════════════════════════════
 
-USER ${APP_USER}
-WORKDIR ${APP_HOME}
+USER ${USER_NAME}
+WORKDIR /home/${USER_NAME}
 
-# Porta padrão do VNC
+# Cria senha do VNC (formato x11vnc)
+RUN mkdir -p /home/${USER_NAME}/.vnc && \
+    x11vnc -storepasswd "${VNC_PASSWORD}" /home/${USER_NAME}/.vnc/passwd 2>/dev/null || \
+    echo "${VNC_PASSWORD}" > /home/${USER_NAME}/.vnc/passwd
+
+# Expõe portas
 EXPOSE ${VNC_PORT} ${NOVNC_PORT}
 
-# Health check
+# Health check (checa se o Xvfb tá rodando)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD pgrep Xvfb > /dev/null || exit 1
 
