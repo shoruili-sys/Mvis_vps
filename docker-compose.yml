@@ -7,7 +7,7 @@ services:
   mt5:
     build:
       context: .
-      dockerfile: Dockerfile.vps
+      dockerfile: Dockerfile
     image: mt5-proton:latest
     container_name: mt5-vps
 
