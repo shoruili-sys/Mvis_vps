@@ -1,0 +1,87 @@
+# ═══════════════════════════════════════════════════════════════════
+# MetaTrader 5 - Docker Compose VPS (com VNC + noVNC)
+# Pra deploy no Coolify ou similar
+# ═══════════════════════════════════════════════════════════════════
+
+services:
+  mt5:
+    build:
+      context: .
+      dockerfile: Dockerfile.vps
+    image: mt5-proton:latest
+    container_name: mt5-vps
+
+    # Modo interativo (mesmo com daemon, queremos shell)
+    stdin_open: true
+    tty: true
+
+    environment:
+      # VNC
+      VNC_PASSWORD: ${VNC_PASSWORD:-mt5vps}
+      VNC_PORT: 5900
+      NOVNC_PORT: 6080
+      VNC_RESOLUTION: ${VNC_RESOLUTION:-1920x1080x24}
+
+      # Proton
+      PROTON_DIR: /proton
+      STEAM_COMPAT_CLIENT_INSTALL_PATH: /proton
+      STEAM_COMPAT_DATA_PATH: /home/veris/proton_prefix
+      USER_NAME: veris
+      PROTON_LOG: 1
+      PROTON_LOG_DIR: /home/veris/proton_logs
+
+      # WineD3D (forçado pro WebView2)
+      PROTON_USE_WINED3D: 1
+      PROTON_USE_DXVK: 0
+      PROTON_NO_D3D11: 0
+      WINE_D3D_CONFIG: renderer=gl
+      WINEDLLOVERRIDES: d3d11=b,dxgi=b,d3d10core=b,d3d9=b
+
+      # Locale
+      LANG: pt_BR.UTF-8
+      LC_ALL: pt_BR.UTF-8
+
+    volumes:
+      # Volumes persistentes (DADOS DO MT5)
+      # No Coolify, mapeia pra paths do host tipo:
+      #   /var/lib/coolify/mt5/proton_prefix
+      - mt5_proton_prefix:/home/veris/proton_prefix
+      - mt5_proton_logs:/home/veris/proton_logs
+      - mt5_installer:/home/veris/mt5_installer
+
+    # NÃO precisa de /dev/dri em VPS (sem GPU física)
+    # Mas se a VPS tiver GPU, descomenta:
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+    # network_mode: host é mais simples pra VNC
+    # Mas pra Coolify, usa bridge + expõe portas
+    ports:
+      - "${VNC_PORT_EXTERNAL:-5900}:5900"   # VNC
+      - "${NOVNC_PORT_EXTERNAL:-6080}:6080" # noVNC web
+
+    shm_size: 1gb
+    restart: unless-stopped
+
+    labels:
+      com.mt5.type: "vps"
+      com.mt5.vnc: "true"
+      com.mt5.novnc: "true"
+
+# ═══════════════════════════════════════════════════════════════════
+# VOLUMES PERSISTENTES
+# ═══════════════════════════════════════════════════════════════════
+
+volumes:
+  mt5_proton_prefix:
+    name: mt5_proton_prefix
+  mt5_proton_logs:
+    name: mt5_proton_logs
+  mt5_installer:
+    name: mt5_installer
+
+# ═══════════════════════════════════════════════════════════════════
+# NETWORK
+# ═══════════════════════════════════════════════════════════════════
+
+networks: {}

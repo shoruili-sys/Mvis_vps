@@ -1,0 +1,34 @@
+# .gitignore - coisas que NÃO vão pro GitHub
+
+# Volumes (dados do MT5 ficam no host, fora do repo)
+mt5data/
+proton_prefix/
+proton_logs/
+installer/
+
+# Cache de build
+.cache/
+build/
+dist/
+*.log
+
+# Arquivos temporários
+*.tmp
+*.bak
+*.swp
+*~
+
+# Ambiente Python (caso use)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
