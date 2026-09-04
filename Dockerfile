@@ -170,21 +170,16 @@ RUN set -eux; \
     echo "✓ User ${APP_USER} (UID ${APP_UID}) criado"
 
 # ═══════════════════════════════════════════════════════════════════
-# Scripts - copia TUDO de uma vez
+# Scripts - copia cada um individualmente
 # ═══════════════════════════════════════════════════════════════════
 
-# Copia o diretório scripts inteiro (mais simples que COPY individual)
-COPY --chown=${APP_USER}:${APP_USER} scripts/ ${APP_HOME}/scripts/
-COPY --chown=${APP_USER}:${APP_USER} start.sh /start.sh
+# Copia apenas os scripts essenciais
+COPY --chown=${APP_USER}:${APP_USER} start_vps.sh /start.sh
 COPY --chown=${APP_USER}:${APP_USER} start_mt5.sh /start_mt5.sh
 
-# Torna todos os scripts executáveis
-RUN chmod +x /start.sh /start_mt5.sh ${APP_HOME}/scripts/*.sh && \
-    # Cria links simbólicos no home pra acesso fácil
-    for f in ${APP_HOME}/scripts/*.sh; do \
-        ln -sf "$f" "${APP_HOME}/$(basename $f)"; \
-    done && \
-    echo "✓ Scripts copiados e linkados em ${APP_HOME}/"
+# Torna executáveis
+RUN chmod +x /start.sh /start_mt5.sh && \
+    echo "✓ Scripts copiados"
 
 # ═══════════════════════════════════════════════════════════════════
 # noVNC web files

@@ -9,9 +9,9 @@
 set -uo pipefail
 
 : "${PROTON_DIR:=/proton}"
-: "${STEAM_COMPAT_DATA_PATH:=/home/veris/proton_prefix}"
+: "${STEAM_COMPAT_DATA_PATH:=${HOME}/proton_prefix}"
 : "${STEAM_COMPAT_CLIENT_INSTALL_PATH:=/proton}"
-: "${USER_NAME:=veris}"
+: "${USER_NAME:=${APP_USER:-$(whoami)}}"
 : "${VNC_PORT:=5900}"
 : "${NOVNC_PORT:=6080}"
 : "${DISPLAY:=:0}"
